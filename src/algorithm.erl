@@ -3,7 +3,7 @@
 %-import(maps, [new/0, put/3]).
 -import(lists, [append/2]).
 
--import(tool, [getLC/2, getNextFreeKey/1, getVoisinId/2]).
+-import(tool, [getLC/2, getNextFreeKey/1, getVoisinId/2, hamming/2]).
 -import(comm, [send/3, prevent/3]).
 
 -export([loop/1, s_/1, create_first/0]).
@@ -60,7 +60,7 @@ exec(Message, Data) -> case Message of
                             %Creation d'un lien
                         {askLink, Node, Id} ->  linkTo(Data, Node, Id);
                         
-                       % {newNode, SenderId, NewId, Node} -> propagate(Data, NewId, Node, SenderId);
+                        {newNode, SenderId, NewId, Node} -> propagate(Data, NewId, Node, SenderId);
                         
                         {newWeight, Node, Id} ->  refreshNode(Data, Node, Id);
                         
@@ -105,14 +105,16 @@ add({Node, Map, Opp, Id}, PID, LId) ->  comm:prevent(newNode, Map, { Id, Node, L
     %   Propagation
     %       TODO : Take hamming distance and Map        
     % =
-%propagate({SNode, Map, Opp, SelfId}, Id, Node, SenderId)    ->  case tool:hamming() of
-%                                                                    1   ->  case maps:is_key( Tool:getFDB(SelfId, Id), Map) of  
-%                                                                                false -> prevent(newNode, Map, {selfId, SNode, Id, Node, SenderId})
-%                                                                            end;
-                                                                    %;
-                                                                      
- %                                                                   _   ->  loop({SNode, Map, Opp, SelfId})
- %                                                               end.
+propagate({SNode, Map, Opp, SelfId}, Id, Node, SenderId)    ->  case {tool:hamming(SelfId, Id), maps:is_key( tool:getFDB(SelfId, Id), Map)} of
+                                                                   {1, false}  -> prevent(propagate, Map, {SelfId, SNode, Id, Node, SenderId}),
+                                                                                  comm:send(askLink, Node, {SNode, SelfId}),
+                                                                                  linkTo({SNode, Map, Opp, SelfId}, Node, Id);
+                                                                                  
+                                                                   {2, _}      -> prevent(propagate, Map, {SelfId, SNode, Id, Node, SenderId}),
+                                                                                  loop({SNode, Map, Opp, SelfId});
+                                                                                                           
+                                                                   _           -> loop({SNode, Map, Opp, SelfId})
+                                                                end.
 
                                                                         %prevent(newNode, Map, {SelfId, SNode, Id, Node, SenderId}),
                                                                         %loop({SNode, Map, Opp, SelfId}).

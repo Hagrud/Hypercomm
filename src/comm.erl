@@ -29,7 +29,11 @@ send(neighChange, Receiver, {Id, Node}) ->  mess(Receiver, {u, {newWeight, Node,
     %           (type, Map, Args).
     %   ====
 prevent(newNode, Map, {SelfId, SNode, Id, Node, SenderId}) ->  mess(Node, {reg, Id}),
-                                                               tool:applyOn(fun pNewNode/3, lists:delete(tool:getFDB(SelfId, SenderId) ,maps:keys(Map)), {SelfId, SNode, Id, Node, Map});
+                                                               prevent(propagate, Map, {SelfId, SNode, Id, Node, SenderId});
+
+
+prevent(propagate, Map, {SelfId, SNode, Id, Node, SenderId})  ->  tool:applyOn(fun pNewNode/3, lists:delete(tool:getFDB(SelfId, SenderId) ,maps:keys(Map)), 
+                                                                                                                                {SelfId, SNode, Id, Node, Map});
 
 prevent(neighChange, Map, {Id, Node})                      ->  tool:applyOn(fun pNewWeight/3, maps:keys(Map), {Node, Id, Map}).
 
@@ -39,8 +43,9 @@ prevent(neighChange, Map, {Id, Node})                      ->  tool:applyOn(fun 
 pNewNode(Key, {SelfId, SNode, NewId, NNode, Map}, null) ->  pNewNode(maps:get(Key, Map) , {SelfId, NewId, NNode}, 
                                                                                           tool:hamming(NewId, tool:getVoisinId(SelfId, Key))),
                                                             null;
-                                                   
-pNewNode(Node, {SId, NewId, NNode}, K) when K < 3       ->  mess(Node, {u,{newNode, SId, NewId, NNode}, self()}).
+                                                                                                                  
+pNewNode(Node, {SId, NewId, NNode}, K) when K < 3       ->  mess(Node, {u,{newNode, SId, NewId, NNode}, self()});
+pNewNode(Node, {SId, NewId, NNode}, K)                  ->  null.
 
 
 pNewWeight(Key, {Node, Id, Map}, _) ->  mess(maps:get(Key, Map), {u, {newWeight, Node, Id}, self()}).                                  
