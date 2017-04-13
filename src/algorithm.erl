@@ -24,15 +24,17 @@ s_(w)   ->  spawn(algorithm, loop, [waiting]).
 %     Node = {PID, Nvoisins}
 % =====
 
-create_first() -> loop({{self(),0}, maps:new(), null, 0}).
+create_first() -> loop({{self(),0}, maps:new(), null, 0, maps:new()}).
 
 loop(waiting) -> receive
                     {reg, Id}   ->  say(r, {reg, Id}),  %say(lists:append("Receive Id : ", integer_to_list(Id))),
-                                    loop({{self(), 0}, maps:new(), null, Id});
+                                    loop({{self(), 0}, maps:new(), null, Id, maps:new()});
                                     
                     _           ->  io:fwrite("close ~n")
                  end;
-                 
+      % ==
+      %   Main Loop
+      % ==           
 loop(Data) -> say("start loop."),
               receive
                            %Debug
@@ -47,12 +49,14 @@ loop(Data) -> say("start loop."),
                            %Know sender (but useless (for debuging)).
                     {u, Message, PID} -> say(r, Message, PID),
                                          exec(Message, Data);
-                           
+                                                                                
                            %Unknow sender.        
                     Message -> say(r, Message),
                                exec(Message, Data)
               end.
-              
+    % ==         
+    %   Basic Commands     
+    % ==   
 exec(Message, Data) -> case Message of
                             %Ajout d'un nouveau noeud                    
                         {add, PID}          ->  addNode(Data, PID);
@@ -64,6 +68,9 @@ exec(Message, Data) -> case Message of
                         
                         {newWeight, Node, Id} ->  refreshNode(Data, Node, Id);
                         
+                            %broadCast
+                        {broadcast, SubMessage, IdBC, IDSender} -> broadExec(Data, SubMessage, IdBC, IDSender);
+                        
                         %        
                             %Arret
                         {stop}        ->  say("close");
@@ -74,47 +81,59 @@ exec(Message, Data) -> case Message of
                  
                  
 exec(Message, Data, Sender) -> case Message of
-                        {ping} ->   Sender!{pong, self()},
-                                    loop(Data)
-                    end.    
-              
+                                    {ping} ->   Sender!{pong, self()},
+                                                loop(Data)
+                               end.    
+       % ==
+       %    BroadCast commands.
+       % == 
+broadExec(Data, Message, BCId, IdParent)  -> io:fwrite("receive broadcast message ~n"),
+                                             case Message of
+                                                {getMinNode} ->  io:fwrite("getMinNode message ~n"),
+                                                                 getMinNode(Data, BCId, IdParent)
+                                             end.
+
+
+getMinNode({Node, Map, Opp, Id, BCMap}, IdBC, IdParent) -> loop({Node, Map, Opp, Id, comm:broadCast(Id, IdParent, IdBC, Map, BCMap, {getMinNode})}).
+
+
+     
 % =====
 %   Build the struct.
 % =====
-addNode({Node, Map, Opp, Id}, PID)  ->  say("try adding node"),
-                                        addNode({Node, Map, Opp, Id}, PID, tool:getLC(Node, Map)).
+addNode({Node, Map, Opp, Id, BCMap}, PID)  ->  say("try adding node"),
+                                               addNode({Node, Map, Opp, Id, BCMap}, PID, tool:getLC(Node, Map)).
 
-addNode({Node, Map, Opp, Id}, PID, {Key, T}) when Key > 0   ->  send(addNode, maps:get(Key, Map), {PID}),
-                                                                loop({Node, Map, Opp, Id});
+addNode({Node, Map, Opp, Id, BCMap}, PID, {Key, T}) when Key > 0   ->  send(addNode, maps:get(Key, Map), {PID}),
+                                                                       loop({Node, Map, Opp, Id, BCMap});
                                                                                        
-addNode({Node, Map, Opp, Id}, PID, _)                       ->  add({Node, Map, Opp, Id}, PID, tool:getVoisinId(Id, tool:getNextFreeKey(Map))).
+addNode({Node, Map, Opp, Id, BCMap}, PID, _)                       ->  add({Node, Map, Opp, Id, BCMap}, PID, tool:getVoisinId(Id, tool:getNextFreeKey(Map))).
 
     %Ajout initial. (pas le même que les autres car opp = null).
-add({{Addr,0}, Map, null, 0}, PID, _) ->    comm:prevent(newNode, Map, { 0, {Addr,0}, 1, {PID, 0}, 0}),
-                                            comm:send(askLink, {PID, 0}, {{Addr, 0}, 0}),
-                                            comm:send(newOpp, {PID, 0}, {{Addr, 0}, 0}),
-                                            linkTo({{Addr,0}, Map, null, 0}, {PID, 0}, 1);
+add({{Addr,0}, Map, null, 0, BCMap}, PID, _) -> comm:prevent(newNode, Map, { 0, {Addr,0}, 1, {PID, 0}, 0}),
+                                                comm:send(askLink, {PID, 0}, {{Addr, 0}, 0}),
+                                                comm:send(newOpp, {PID, 0}, {{Addr, 0}, 0}),
+                                                linkTo({{Addr,0}, Map, null, 0, BCMap}, {PID, 0}, 1);
 
 
-add({Node, Map, Opp, Id}, PID, LId) ->  comm:prevent(newNode, Map, { Id, Node, LId, {PID, 0}, Id}),
-                                        comm:send(askLink, {PID, 0}, {Node, Id}),
-                                        %   comm:send(newOpp, {PID, 0}, {Node, 0}), -> TODO a revoir.
-                                        linkTo({Node, Map, Opp, Id}, {PID, 0}, LId).
+add({Node, Map, Opp, Id, BCMap}, PID, LId) ->   comm:prevent(newNode, Map, { Id, Node, LId, {PID, 0}, Id}),
+                                                comm:send(askLink, {PID, 0}, {Node, Id}),
+                                                %   comm:send(newOpp, {PID, 0}, {Node, 0}), -> TODO a revoir.
+                                                linkTo({Node, Map, Opp, Id, BCMap}, {PID, 0}, LId).
 
     % = 
-    %   Propagation
-    %       TODO : Take hamming distance and Map        
+    %   Propagation      
     % =
-propagate({SNode, Map, Opp, SelfId}, Id, Node, SenderId)    ->  case {tool:hamming(SelfId, Id), maps:is_key( tool:getFDB(SelfId, Id), Map)} of
-                                                                   {1, false}  -> prevent(propagate, Map, {SelfId, SNode, Id, Node, SenderId}),
-                                                                                  comm:send(askLink, Node, {SNode, SelfId}),
-                                                                                  linkTo({SNode, Map, Opp, SelfId}, Node, Id);
+propagate({SNode, Map, Opp, SelfId, BCMap}, Id, Node, SenderId) -> case {tool:hamming(SelfId, Id), maps:is_key( tool:getFDB(SelfId, Id), Map)} of
+                                                                        {1, false} -> prevent(propagate, Map, {SelfId, SNode, Id, Node, SenderId}),
+                                                                                      comm:send(askLink, Node, {SNode, SelfId}),
+                                                                                      linkTo({SNode, Map, Opp, SelfId, BCMap}, Node, Id);
                                                                                   
-                                                                   {2, _}      -> prevent(propagate, Map, {SelfId, SNode, Id, Node, SenderId}),
-                                                                                  loop({SNode, Map, Opp, SelfId});
+                                                                        {2, _}     -> prevent(propagate, Map, {SelfId, SNode, Id, Node, SenderId}),
+                                                                                      loop({SNode, Map, Opp, SelfId, BCMap});
                                                                                                            
-                                                                   _           -> loop({SNode, Map, Opp, SelfId})
-                                                                end.
+                                                                        _          -> loop({SNode, Map, Opp, SelfId, BCMap})
+                                                                   end.
 
                                                                         %prevent(newNode, Map, {SelfId, SNode, Id, Node, SenderId}),
                                                                         %loop({SNode, Map, Opp, SelfId}).
@@ -122,23 +141,19 @@ propagate({SNode, Map, Opp, SelfId}, Id, Node, SenderId)    ->  case {tool:hammi
 % =====
 %   Create Link.
 % =====
-linkTo({{Addr, N}, Map, Opp, Id}, Node, LId)    ->  prevent(neighChange, Map, {Id, {Addr, N+1}}),
-                                                    send(neighChange, Node, {Id, {Addr, N+1}}),
-                                                    loop({ {Addr, N+1}, 
-                                                            maps:put(tool:getFDB(Id, LId), Node, Map),
-                                                            Opp, Id }).
+linkTo({{Addr, N}, Map, Opp, Id, BCMap}, Node, LId)    ->  prevent(neighChange, Map, {Id, {Addr, N+1}}),
+                                                           send(neighChange, Node, {Id, {Addr, N+1}}),
+                                                           loop({ {Addr, N+1}, 
+                                                                maps:put(tool:getFDB(Id, LId), Node, Map), Opp, Id, BCMap}).
                                                                                                             
 % ====
 %   Refresh data.
 % ====
-refreshNode({Node, Map, Opp, Id}, LNode, LId)    -> loop({Node, maps:put(tool:getFDB(LId, Id), LNode, Map), Opp, Id}).
+refreshNode({Node, Map, Opp, Id, BCMap}, LNode, LId)    -> loop({Node, maps:put(tool:getFDB(LId, Id), LNode, Map), Opp, Id, BCMap}).
 
 % ====
 %   Debug function
 % ====
-
-%say(id, {_, _, _, Id}, Value) -> io:fwrite("[~p] id : [~p] ~p ~n", [self(), Id, Value]).
-
 say(Value) -> io:fwrite("[~p][   ] : ~p ~n", [self(), Value]).
 
 say(r, Message) -> say(r, Message, "?").
