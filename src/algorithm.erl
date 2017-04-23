@@ -94,9 +94,9 @@ broadExec(Data, Message, BCId, IdParent)  -> io:fwrite("receive broadcast messag
                                              end.
 
 
-getMinNode({Node, Map, Opp, Id, BCMap}, IdBC, IdParent) -> loop({Node, Map, Opp, Id, comm:broadCast(Id, IdParent, IdBC, Map, BCMap, {getMinNode})}).
+getMinNode({Node, Map, Opp, Id, BCMap}, IdBC, IdParent) -> loop({Node, Map, Opp, Id, comm:broadCast(Id, IdParent, IdBC, Map, BCMap, {getMinNode}, fun dMinNode/2) }).
 
-
+dMinNode({Map}, Result) -> io:fwrite("decide maggle ~n").
      
 % =====
 %   Build the struct.

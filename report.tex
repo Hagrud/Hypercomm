@@ -1,0 +1,160 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{stmaryrd}
+
+\usepackage{tikz}
+\usetikzlibrary{arrows,automata}
+
+
+\title{Distributed systems : Building~a~distributed~data-manager}
+\author{Polet Pierre-Etienne}
+\date{2017, second semester}
+
+{\large
+
+\begin{document}
+	\maketitle
+	
+	\section*{Introduction:}
+		For this project we had to build a distributed data-manager.
+		
+	\section{Topology choice:}
+		I choose to use an hypercube topology for this project, because of the main advantages of this topology:
+		\begin{itemize}
+			\item Each nodes are at distance at most $\log_2(N)$ from the others, so we can expect a low number of messages to transmit informations through the network.
+			\item Each node have $\log_2(N)$ neighbors, so we hope to prevent to get a non-connected network in case of crash of few of them.
+		\end{itemize}
+		
+		Intuitively this topology may allow to have a low numbers of messages and a "safe" network without getting an highly connected graph. On the other hand there is no order between the nodes and solutions to communicate efficiently seems not trivial.
+		
+		\subsection{Node definition:}
+			In the topology a node will be an Erlang thread, once assigned in the network each node will know its unique identifier related to this network.
+			
+			The identifier ID of a node is an integer, each node will be connected to another node if and only if their ID differ from 1 digit in their binary representation.
+			
+		\subsection{Build the network:}
+			The base structure is a doubly linked topology, we used those links only to detect the loss of a node and/or construct the network.
+			
+			Then for "real" communication, each nodes will get a link to nodes with one different bit in their Id. (See  Figures 1 and 2).
+		
+			\begin{figure}
+							\begin{tikzpicture}[-,>=stealth',shorten >=1pt,auto,node distance=2cm,
+							semithick]
+							\tikzstyle{every state}=[fill=white,draw=blue,text=black]
+							
+							\node[state] (0)                 {$0$};
+							\node[state] (1) [right of=0] 	{$1$};
+							\node[state] (2) [right of=1] 	{$2$};
+							\node[state] (3) [right of=2] 	{$3$};
+							\node[state] (4) [right of=3] 	{$4$};
+							\node[state] (5) [right of=4] 	{$5$};
+							\node[state] (6) [right of=5] 	{$6$};
+							\node[state] (7) [right of=6] 	{$7$};
+							
+							\path 
+							(0) edge[bend left] 	node {} (1)
+							(0)	edge[bend left]		node {} (2)
+							(0)	edge[bend left]		node {}	(4)
+							
+							%(1) edge[->] 			node {} (2)
+							(1) edge[bend right]	node {} (3)
+							(1) edge[bend right]	node {} (5)
+							
+							(2) edge[bend left]		node {} (3)
+							(2) edge[bend left]		node {} (6)
+							
+							%(3) edge[->] 	 		node {} (4)
+							(3) edge[bend right]	node {} (7)
+							
+							(4) edge[bend left]		node {} (5)
+							(4) edge[bend left]		node {} (6)
+							
+							%(5) edge[->]  	 		node {} (6)
+							(5) edge[bend right]	node {} (7)
+							
+							(6) edge[bend left]		node {} (7);
+							
+							\end{tikzpicture}
+				\caption{Links in an hypercube topology. (communication)}
+			\end{figure}
+			
+			\begin{figure}
+				\begin{tikzpicture}[-,>=stealth',shorten >=1pt,auto,node distance=2cm,semithick]
+					\tikzstyle{every state}=[fill=white,draw=blue,text=black]
+							
+					\node[state] (0)                 {$0$};
+					\node[state] (1) [right of=0] 	{$1$};
+					\node[state] (2) [right of=1] 	{$2$};
+					\node[state] (3) [right of=2] 	{$3$};
+					\node[state] (4) [right of=3] 	{$4$};
+					\node[state] (5) [right of=4] 	{$5$};
+					\node[state] (6) [right of=5] 	{$6$};
+					\node[state] (7) [right of=6] 	{$7$};
+							
+					\path
+					(0) edge[->] 			node {} (1)
+					(0) edge[bend left] 	node {} (1)
+					(0)	edge[bend left]		node {} (2)
+					(0)	edge[bend left]		node {}	(4)
+							
+					(1) edge[->] 			node {} (2)
+					(1) edge[bend right]	node {} (3)
+					(1) edge[bend right]	node {} (5)
+					
+					(2) edge[->] 			node {} (3)	
+					(2) edge[bend left]		node {} (3)
+					(2) edge[bend left]		node {} (6)
+							
+					(3) edge[->] 	 		node {} (4)
+					(3) edge[bend right]	node {} (7)
+					
+					(4) edge[->] 			node {} (5)	
+					(4) edge[bend left]		node {} (5)
+					(4) edge[bend left]		node {} (6)
+							
+					(5) edge[->]  	 		node {} (6)
+					(5) edge[bend right]	node {} (7)
+					
+					(6) edge[->] 			node {} (7)	
+					(6) edge[bend left]		node {} (7);
+							
+				\end{tikzpicture}
+				\caption{Links in our topology. (Complete topology)}
+			\end{figure}
+			
+			We define two way of building this topology:
+			
+			\begin{itemize}
+				\item Using only communication structure, with a wave algorithm we search the node which have the minimum number of neighbors and he add the new node.
+				
+				But:
+				\begin{itemize}
+					\item if we loss node in the "middle" of the topology we may not quickly replace them.
+					\item it's not easy to deal with the loss of a node during the wave algorithm.
+				\end{itemize}
+				
+				
+				\item With the "debug" links we send the new node to the next node in the topology until we found one without next node.
+				
+				But:
+				\begin{itemize}
+					\item This algorithm do not take advantage of the topology.
+				\end{itemize}
+			\end{itemize}
+
+				
+				
+		\subsection{Basic communication algorithm:}
+			
+			\paragraph{Send to ID:}
+			
+			\paragraph{Broadcast:}
+			
+\end{document}
+}
