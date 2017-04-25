@@ -3,7 +3,7 @@
 %-import(maps, [get/2, keys/1]).
 -import(tool, [getPID/1, hamming/2, applyOn/3, getVoisinId/2, getFDB/2]).
 
--export([send/3, prevent/3, broadCast/7, repBroad/7]).
+-export([send/3, prevent/3, broadCast/7]).
 
 %   =
 %   Communication module.

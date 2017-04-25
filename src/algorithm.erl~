@@ -1,6 +1,6 @@
 -module(algorithm).
 
-%-import(maps, [new/0, put/3]).
+-import(maps, [new/0, put/3]).
 -import(lists, [append/2]).
 
 -import(tool, [getLC/2, getNextFreeKey/1, getVoisinId/2, hamming/2]).
