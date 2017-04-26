@@ -3,7 +3,7 @@
 %-import(maps, [new/0, put/3]).
 -import(lists, [append/2]).
 
--import(tool, [getLC/2, getNextFreeKey/1, getVoisinId/2, hamming/2]).
+-import(tool, [getLC/2, getNextFreeKey/1, getVoisinId/2, hamming/2, getMinTuple/1]).
 -import(comm, [send/3, prevent/3]).
 
 -export([loop/1, s_/1, create_first/0]).
@@ -60,7 +60,7 @@ loop(Data) -> say("start loop."),
 exec(Message, Data) -> case Message of
                             %Ajout d'un nouveau noeud                    
                         {add, PID}          ->  addNode(Data, PID);
-                                     
+                                                             
                             %Creation d'un lien
                         {askLink, Node, Id} ->  linkTo(Data, Node, Id);
                         
@@ -103,7 +103,14 @@ getMinNode({Node, Map, Opp, Id, BCMap}, IdBC, IdParent) -> loop({Node, Map, Opp,
 
 getMinNodeRep({Node, Map, Opp, Id, BCMap}, IdBC, IdSender, Res) -> loop({Node, Map, Opp, Id, comm:repBroad(Id, IdSender, IdBC, Map, BCMap, Res, fun dMinNode/2)}).
 
-dMinNode({IdParent, Map}, Result) -> io:fwrite("decide ~n").
+dMinNode({null, Map}, Result) -> NResult = maps:put(0, {self(), maps:size(Map)}, Result),
+                                 say("Broadcast initiatior decide."),
+                                 say(tool:getMinTuple(NResult));
+
+dMinNode({_, Map}, null) -> {self(), maps:size(Map)};
+
+dMinNode({IdParent, Map}, Result) -> NResult = maps:put(0, {self(), maps:size(Map)}, Result),
+                                     tool:getMinTuple(NResult).
      
 % =====
 %   Build the struct.

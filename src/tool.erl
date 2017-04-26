@@ -8,7 +8,7 @@
 -export([getLC/2, getNextFreeKey/1]).
 
 
-
+-export([getMinTuple/1]).
 -export([applyOn/3]).
 
 
@@ -43,6 +43,15 @@ getLC(Node, Map) -> applyOn(fun minNode/3, maps:keys(Map), {getKL(Node), Map}).
 %%%%%%%%%%% TODO Revoir
 minNode(Elem, {N, Voisins}, null) -> minNode(Elem, {N, Voisins}, {-1, N});
 minNode(Elem, {_, Voisins}, {Id, Val}) -> getMinTuple(Val, Id, getKL(maps:get(Elem, Voisins)), Elem).
+
+getMinTuple(Map) -> applyOn(fun getMinTuple/3, maps:keys(Map), Map).
+
+getMinTuple(Elem, Map, null)        -> maps:get(Elem, Map);
+getMinTuple(Elem, Map, {Id1, Val1}) -> case maps:get(Elem, Map) of
+                                            {Id2, Val2} -> getMinTuple(Val1, Id1, Val2, Id2);
+                                            
+                                            _ -> {Id1, Val1}
+                                       end.
 
 getMinTuple(Val1, _, Val2, Id2) when Val2 < Val1 -> {Id2, Val2};
 getMinTuple(Val1, Id1, _, _) -> {Id1, Val1}.

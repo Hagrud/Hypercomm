@@ -50,7 +50,7 @@ broadCast(Id, IdParent, IdBC, Map, BCMap, Message, Decide)    -> case maps:is_ke
                                                             
                                                                     false -> case {maps:size(Map), IdParent} of
                                                                                 
-                                                                                {0, null}  -> Decide({null, Map}, null),
+                                                                                {0, null}  -> Decide({null, Map}, maps:new()),
                                                                                               BCMap;
                                                                                 
                                                                                 {1, null}  -> tool:applyOn(fun pBroadCast/3, maps:keys(Map),{Map, Message, IdBC, Id}),maps:put(IdBC, {IdParent, maps:new()}, BCMap);
@@ -63,15 +63,15 @@ broadCast(Id, IdParent, IdBC, Map, BCMap, Message, Decide)    -> case maps:is_ke
                                                                  end.
                                                          
 repBroad(Id, IdSender, IdBC, Map, BCMap, Result, Decide) -> NBCMap = addInfoBCMap(IdBC, BCMap, maps:get(IdBC, BCMap), IdSender, Result),
-                                                         case { getBCParent(maps:get(IdBC, NBCMap)) , 
-                                                                maps:size(Map) - maps:size(getBCMap(maps:get(IdBC, NBCMap)))} of
+                                                            case { getBCParent(maps:get(IdBC, NBCMap)) , 
+                                                                    maps:size(Map) - maps:size(getBCMap(maps:get(IdBC, NBCMap)))} of
                                                                 
-                                                            {null, 0} -> Decide({null, Map}, getBCMap(maps:get(IdBC, NBCMap)));
+                                                                {null, 0} -> Decide({null, Map}, getBCMap(maps:get(IdBC, NBCMap)));
                                                             
-                                                            {IdParent, 1}  -> Decide({IdParent, Map}, getBCMap(maps:get(IdBC, NBCMap)))
+                                                                {IdParent, 1}  -> Decide({IdParent, Map}, getBCMap(maps:get(IdBC, NBCMap)))
                                                             
-                                                         end,
-                                                         NBCMap.
+                                                            end,
+                                                            NBCMap.
 
 addInfoBCMap(IdBc, BCMap, {IdParent, Map}, Key, Info) -> maps:put(IdBc, {IdParent, maps:put(Key, Info, Map)}, BCMap).
 
