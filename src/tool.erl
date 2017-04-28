@@ -8,10 +8,16 @@
 -export([getLC/2, getNextFreeKey/1]).
 
 
+-export([getHash/1]).
 -export([getMinTuple/1]).
 -export([applyOn/3]).
 
 
+
+% ====
+%   Get hash from state of a node (we hope it is unique).
+% ====
+getHash({Node, Map, Opp, Id, BCMap}) -> crypto:hash(md5, [Id, maps:keys(Map), maps:keys(BCMap)]).
 
 % ====
 %   Operation on Node

@@ -5,6 +5,7 @@
 
 -import(tool, [getLC/2, getNextFreeKey/1, getVoisinId/2, hamming/2, getMinTuple/1]).
 -import(comm, [send/3, prevent/3]).
+-import(broad, [broadAdd/4, broadAddRep/5]).
 
 -export([loop/1, s_/1, create_first/0]).
 
@@ -32,14 +33,15 @@ loop(waiting) -> receive
                                     
                     _           ->  io:fwrite("close ~n")
                  end;
+                 
+loop(null) -> say("Node shut down");
       % ==
       %   Main Loop
-      % ==           
+      % ==        
 loop(Data) -> say("start loop."),
               receive
                            %Debug
-                    {sayData}         -> say("Say Data"),
-                                         say(Data),
+                    {sayData}         -> say(Data),
                                          loop(Data);
               
                            %Know sender
@@ -57,86 +59,80 @@ loop(Data) -> say("start loop."),
     % ==         
     %   Basic Commands     
     % ==   
-exec(Message, Data) -> case Message of
-                            %Ajout d'un nouveau noeud                    
-                        {add, PID}          ->  addNode(Data, PID);
+exec(Message, Data) -> 
+    case Message of
+            %Ajout d'un nouveau voisin  (Sur ce noeud).          
+        {add, PID}  ->  addNode(Data, PID);
+                        
+            %Ajout d'un nouveau noeud au reseau.
+        {put, PID}  ->  putNode(Data, PID);
+                        
+        {reg, Name} ->  erlang:register(Name, self()),
+                        loop(Data);
                                                              
-                            %Creation d'un lien
-                        {askLink, Node, Id} ->  linkTo(Data, Node, Id);
+            %Creation d'un lien
+        {askLink, Node, Id} ->  linkTo(Data, Node, Id);
                         
-                        {newNode, SenderId, NewId, Node} -> propagate(Data, NewId, Node, SenderId);
+        {newNode, SenderId, NewId, Node} -> propagate(Data, NewId, Node, SenderId);
                         
-                        {newWeight, Node, Id} ->  refreshNode(Data, Node, Id);
+        {newWeight, Node, Id} ->  refreshNode(Data, Node, Id);
                         
-                            %broadCast
-                        {broadcast, SubMessage, IdBC, IDSender} -> broadExec(Data, SubMessage, IdBC, IDSender);
+            %broadCast
+        {broadcast, SubMessage, IdBC, IDSender} ->  {Node, Map, Opp, Id, _} = Data,
+                                                    loop({Node, Map, Opp, Id, broadExec(Data, SubMessage, IdBC, IDSender)});
+                    
+        {repBroad, Id, IdBC, Result} -> {Node, Map, Opp, SelfId, _} = Data,
+                                        loop({Node, Map, Opp, SelfId, repBroad(Data, Id, IdBC, Result)});
+
+
+        {endBroad, IdBC, IDSender} ->   {Node, Map, Opp, Id, BCMap} = Data,
+                                        loop({Node, Map, Opp, Id, comm:endBroad(Id, IDSender, IdBC, Map, BCMap)});
+
+            %Arret
+        {stop}  ->  loop(null);
                         
-                        {repBroad, Id, IdBC, Result} -> repBroad(Data, Id, IdBC, Result);
-                        
-                        %        
-                            %Arret
-                        {stop}        ->  say("close");
-                        
-                        _             ->  say(" Unknow message."),
-                                          loop(Data)
-                    end.
+        _       ->  say(" Unknow message."),
+                    loop(Data)
+    end.
                  
                  
 exec(Message, Data, Sender) -> case Message of
                                     {ping} ->   Sender!{pong, self()},
                                                 loop(Data)
-                               end.    
+                               end.
        % ==
        %    BroadCast commands.
        % == 
-broadExec(Data, Message, BCId, IdParent)  -> case Message of
-                                                {getMinNode} ->  io:fwrite("getMinNode message ~n"),
-                                                                 getMinNode(Data, BCId, IdParent)
+broadExec(Data, Message, BCId, IdParent)  -> {_, _, _, _, BCMap} = Data,
+                                             case Message of
+                                                {add, PID} -> broad:broadAdd(Data, BCId, IdParent, PID);
+                                                
+                                                _          -> BCMap
                                              end.
                                              
-repBroad(Data, IdSender, BCId, {Message, Res})    -> case Message of
-                                                {getMinNode} -> getMinNodeRep(Data, BCId, IdSender, Res)
-                                               end.
-
-
-getMinNode({Node, Map, Opp, Id, BCMap}, IdBC, IdParent) -> loop({Node, Map, Opp, Id, comm:broadCast(Id, IdParent, IdBC, Map, BCMap, {getMinNode}, fun dMinNode/2) }).
-
-getMinNodeRep({Node, Map, Opp, Id, BCMap}, IdBC, IdSender, Res) -> loop({Node, Map, Opp, Id, comm:repBroad(Id, IdSender, IdBC, Map, BCMap, Res, fun dMinNode/2)}).
-
-dMinNode({null, Map}, Result) -> NResult = maps:put(0, {self(), maps:size(Map)}, Result),
-                                 say("Broadcast initiatior decide."),
-                                 say(tool:getMinTuple(NResult));
-
-dMinNode({_, Map}, null) -> {self(), maps:size(Map)};
-
-dMinNode({IdParent, Map}, Result) -> NResult = maps:put(0, {self(), maps:size(Map)}, Result),
-                                     tool:getMinTuple(NResult).
-     
+repBroad(Data, IdSender, BCId, {Message, Res}) -> {Node, Map, Opp, Id, BCMap} = Data,
+                                                  case Message of
+                                                    {add, PID} -> broadAddRep(Data, BCId, IdSender, Res, PID);
+                                                    
+                                                    _          -> BCMap
+                                                  end.
+  
 % =====
 %   Build the struct.
 % =====
-addNode({Node, Map, Opp, Id, BCMap}, PID)  ->  say("try adding node"),
-                                               addNode({Node, Map, Opp, Id, BCMap}, PID, tool:getLC(Node, Map)).
+    %L'id est un hash md5 de la structure à l'instant.
+putNode(Data, PID) ->   {Node, Map, Opp, Id, _ } = Data,
+                        loop({Node, Map, Opp, Id, broad:broadAdd(Data, tool:getHash(Data), null, PID)}).
 
-addNode({Node, Map, Opp, Id, BCMap}, PID, {Key, T}) when Key > 0   ->  send(addNode, maps:get(Key, Map), {PID}),
-                                                                       loop({Node, Map, Opp, Id, BCMap});
-                                                                                       
-addNode({Node, Map, Opp, Id, BCMap}, PID, _)                       ->  add({Node, Map, Opp, Id, BCMap}, PID, tool:getVoisinId(Id, tool:getNextFreeKey(Map))).
+addNode({Node, Map, Opp, Id, BCMap}, PID)  ->  add({Node, Map, Opp, Id, BCMap}, PID, tool:getVoisinId(Id, tool:getNextFreeKey(Map))).
 
-    %Ajout initial. (pas le même que les autres car opp = null).
-add({{Addr,0}, Map, null, 0, BCMap}, PID, _) -> comm:prevent(newNode, Map, { 0, {Addr,0}, 1, {PID, 0}, 0}),
-                                                comm:send(askLink, {PID, 0}, {{Addr, 0}, 0}),
-                                                comm:send(newOpp, {PID, 0}, {{Addr, 0}, 0}),
-                                                linkTo({{Addr,0}, Map, null, 0, BCMap}, {PID, 0}, 1);
-
-
+    
 add({Node, Map, Opp, Id, BCMap}, PID, LId) ->   comm:prevent(newNode, Map, { Id, Node, LId, {PID, 0}, Id}),
                                                 comm:send(askLink, {PID, 0}, {Node, Id}),
-                                                %   comm:send(newOpp, {PID, 0}, {Node, 0}), -> TODO a revoir.
                                                 linkTo({Node, Map, Opp, Id, BCMap}, {PID, 0}, LId).
 
     % = 
-    %   Propagation      
+    %   Propagation      useless on va broadcast.
     % =
 propagate({SNode, Map, Opp, SelfId, BCMap}, Id, Node, SenderId) -> case {tool:hamming(SelfId, Id), maps:is_key( tool:getFDB(SelfId, Id), Map)} of
                                                                         {1, false} -> prevent(propagate, Map, {SelfId, SNode, Id, Node, SenderId}),
@@ -149,16 +145,12 @@ propagate({SNode, Map, Opp, SelfId, BCMap}, Id, Node, SenderId) -> case {tool:ha
                                                                         _          -> loop({SNode, Map, Opp, SelfId, BCMap})
                                                                    end.
 
-                                                                        %prevent(newNode, Map, {SelfId, SNode, Id, Node, SenderId}),
-                                                                        %loop({SNode, Map, Opp, SelfId}).
-
 % =====
 %   Create Link.
 % =====
 linkTo({{Addr, N}, Map, Opp, Id, BCMap}, Node, LId)    ->  prevent(neighChange, Map, {Id, {Addr, N+1}}),
                                                            send(neighChange, Node, {Id, {Addr, N+1}}),
-                                                           loop({ {Addr, N+1}, 
-                                                                maps:put(tool:getFDB(Id, LId), Node, Map), Opp, Id, BCMap}).
+                                                           loop({ {Addr, N+1}, maps:put(tool:getFDB(Id, LId), Node, Map), Opp, Id, BCMap}).
                                                                                                             
 % ====
 %   Refresh data.
