@@ -30,6 +30,10 @@ send(addObj, Receiver, {ObjId, Obj})           ->   mess(Receiver, {u, {addObj, 
 
 send(getObj, Receiver, {ObjId, Client})        ->   mess(Receiver, {u, {getObj, ObjId, Client}, self()});
 
+send(directAdd, Receiver, {Parent, OId, Id})   ->   mess(Receiver, {u, {broadcast, {objAdded, OId,Id}, Parent}, self()});
+
+send(rmTmp, Receiver, {IdBC})                  ->   mess(Receiver, {u, {rmTmp, IdBC}, self()});
+
 send(toClient, Client, Value)                  ->   mess(Client, Value);
 
 send(giveId, Receiver, {Id})                   ->   mess(Receiver, {reg, Id}).
@@ -86,7 +90,9 @@ repBroad(Data, IdSender, IdBC, Message, Result, Decide) ->
         {null, _} -> null;
                                                             
         {IdParent, 1}  -> send(repBroad, maps:get(tool:getFDB(Id, IdParent), Map),
-                                         {Id, IdBC, {Message, Decide(Data, IdBC, IdParent, Message, getBCMap(maps:get(IdBC, NBCMap)))}})
+                                         {Id, IdBC, {Message, Decide(Data, IdBC, IdParent, Message, getBCMap(maps:get(IdBC, NBCMap)))}});
+                                         
+        {_, _}  -> null
     end,
     NBCMap.
 
@@ -108,10 +114,16 @@ getBCMap({_, Map}) -> Map.
     %   BroadCast without answer.
     % ===
 broadCast(Data, IdParent, Message, Decide) ->
-    case Decide(Data, Message) of
-        true  -> tool:applyOn(fun pBroadCast/3, lists:delete(tool:getFDB(IdParent, gD(i, Data)), maps:keys(gD(m, Data))), {Map, Message, gD(i, Data)}).
+    case {Decide(Data, Message), IdParent} of
+        {{true, D}, null}  ->  tool:applyOn(fun pBroadCast/3, maps:keys(gD(m, Data)), {gD(m, Data), Message, gD(i, Data)}),
+                               D; 
+   
+        {{true, D}, _}  ->  tool:applyOn(fun pBroadCast/3, 
+                                        lists:delete(tool:getFDB(IdParent, gD(i, Data)), maps:keys(gD(m, Data))), 
+                                        {gD(m, Data), Message, gD(i, Data)}),
+                            D;
         
-        false -> null.
+        {{false, D}, _} -> D
     end.
 
     %   ====

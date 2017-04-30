@@ -16,7 +16,7 @@
 -export([gD/2, sD/3]).
 -export([time_m/0, max/2]).
 -export([toList/1]).
--export([aIsRegistered/3, aUnRegister/3, aRegister/3]).
+-export([aIsRegistered/3, aUnRegister/3, aRegister/3, aRm/2]).
 % ====
 %   Operation on Data = {Map, Objects, Address, ID, BCMap}
 % ====
@@ -59,19 +59,8 @@ getNextFreeKey(Map, N) -> case maps:is_key(N, Map) of
                           end.
                           
 % =====
-%   Key min voisins.
+%   Get min tuple according to the second value.
 % =====
-%getMin({Id, Type, Voisins, Op}) ->  applyOn(Min, maps:keys(Voisins), {getNVOisins({Id, Type, Voisins, Op}), Voisins}).
-%getLC(Node, Map) -> applyOn(fun minNode/3, maps:keys(Map), {getKL(Node), Map}).
-%
-%
-%
-%
-%
-%%%%%%%%%%% TODO Revoir
-%minNode(Elem, {N, Voisins}, null) -> minNode(Elem, {N, Voisins}, {-1, N});
-%minNode(Elem, {_, Voisins}, {Id, Val}) -> getMinTuple(Val, Id, getKL(maps:get(Elem, Voisins)), Elem).
-
 getMinTuple(Map) -> applyOn(fun getMinTuple/3, maps:keys(Map), Map).
 
 getMinTuple(Elem, Map, null)        -> maps:get(Elem, Map);
@@ -83,9 +72,6 @@ getMinTuple(Elem, Map, {Id1, Val1}) -> case maps:get(Elem, Map) of
 
 getMinTuple(Val1, _, Val2, Id2) when Val2 < Val1 -> {Id2, Val2};
 getMinTuple(Val1, Id1, _, _) -> {Id1, Val1}.
-
-%getNVoisin({_, _, Voisins, _}) -> maps:size(Voisins).
-
 
 % =====
 %   Hamming distance computation
@@ -145,6 +131,16 @@ aRegister(Addr, IDObj, IDNode) ->
 aUnRegister(Addr, IDObj, IDNode) ->
     NAddr = aAtoBUnReg(Addr, IDObj, IDNode),
     aAtoBUnReg(NAddr, IDNode, IDObj).
+    
+aRm(Addr, A) ->
+    case maps:is_key(A, Addr) of
+        false -> Addr;
+        
+        true -> applyOn(fun aRm/3, maps:get(A, Addr), {Addr, A})
+    end.
+    
+aRm(B, {Addr, A}, null) -> aUnRegister(Addr, A, B);
+aRm(B, {_, A}, NAddr) -> aUnRegister(NAddr, A, B).
 
 aAtoBReg(Addr, A, B) -> 
     case maps:is_key(A, Addr) of
@@ -164,18 +160,12 @@ aAtoBUnReg(Addr, A, B) ->
                         false -> Addr;
                         
                         true -> NList = lists:delete(B, maps:get(A, Addr)),
-                                maps:put(A, NList, Addr)
+                                addListToAddr(Addr, NList, A)
                     end;
                     
         false   ->  Addr
     end.
-
-
-
-
-
-
-
-
-
+    
+addListToAddr(Addr, [], Pos)    -> maps:remove(Pos, Addr);
+addListToAddr(Addr, List, Pos)  -> maps:put(Pos, List, Addr).
 

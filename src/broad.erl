@@ -4,6 +4,7 @@
 -export([broadNew/4, broadNewRep/5]).
 -export([broadAddObj/3, broadAddObj/4, broadAddObjRep/4]).
 -export([broadGetObj/4, broadGetObjRep/5]).
+-export([directObjAdded/4, directObjRm/3]).
 
 -import(comm, [broadCast/7, repBroad/8, mess/2]).
 -import(tool, [gD/2]).
@@ -73,21 +74,31 @@ broadAddObjRep(Data, IdBC, IdSender, Res) -> comm:repBroad(Data, IdSender, IdBC,
 
     %Initiator
 addObj(Data, IdBC, null, {addObj}, Result) -> 
-    [{PID1, _}, {PID2, _}] = addObj(Data, IdBC, 0, {addObj}, Result),
+    [{{PID1, ID1}, _}, {{PID2, ID2}, _}] = addObj(Data, IdBC, 0, {addObj}, Result),
     Object = maps:get(IdBC, gD(o, Data)),
-          %Delete object from this node.
+    
+        %Remove the tmp save if needed.
+    case {PID1, PID2, self()} of
+        {SELF, _, SELF} -> ok;
+        {_, SELF, SELF} -> ok;      
+        {_, _, _}       -> comm:send(rmTmp, self(), {IdBC})
+    end,
+        %Save the object
     comm:send(addObj, PID1, {IdBC, Object}),
     comm:send(addObj, PID2, {IdBC, Object}),
-          %Say on which node the data is saved here ?
+        %Broadcast the new information.
+    comm:send(directAdd, self(), {null, IdBC, ID1}),
+    comm:send(directAdd, self(), {null, IdBC, ID2}),
+        %End the broadcast.
     endBroad(gD(i, Data), IdBC);
                                                 
                                               
     %Leaf
-addObj(Data, _, _, {addObj}, null) -> [{self(), maps:size(gD(o, Data))}, null];
+addObj(Data, _, _, {addObj}, null) -> [{{self(),gD(i, Data)} , maps:size(gD(o, Data))}, null];
     
     %Node
 addObj(Data, _, _, {addObj}, Result) ->  
-    NResult = maps:put(-1, [{self(), maps:size(gD(o, Data))}, null], Result),
+    NResult = maps:put(-1, [{{self(),gD(i, Data)}, maps:size(gD(o, Data))}, null], Result),
     tool:applyOn(fun getTwoNode/3, maps:keys(NResult), {NResult}).
 
     % Utility.
@@ -142,14 +153,29 @@ getContainer(Data, Result, ObjId) ->
     
 %%%% Broadcast direct :
                  
-directObjAdded(Data, ObjId, NodeId) -> comm:broadCast(Data, IdParent, {objAdded, ObjId, NodeId}, fun objAdded/2).
+directObjAdded(Data, IdParent, ObjId, NodeId) -> comm:broadCast(Data, IdParent, {objAdded, ObjId, NodeId}, fun objAdded/2).
 
 
-objAdded(Data, Message) ->
-    case gD(
+objAdded(Data, {objAdded, ObjId, NodeId}) ->
+    case tool:aIsRegistered(gD(a, Data), ObjId, NodeId) of
+        true -> {false, Data};
+        
+        false -> NData = tool:sD(a, Data, tool:aRegister(gD(a, Data), ObjId, NodeId)),
+                 {true, NData}
+    end.
 
+    %From all the topology
+directObjRm(Data, IdParent, ObjId) -> comm:broadCast(Data, IdParent, {objRm, ObjId}, fun objRm/2).
 
+objRm(Data, {objRm, ObjId}) ->
+    NData = tool:sD(o, Data, maps:remove(ObjId, gD(o, Data))),
+    case maps:is_key(ObjId, gD(a, NData)) of
+        true -> {true, tool:sD(a, NData, tool:aRm(gD(a, NData), ObjId))};
+        
+        false -> {false, Data}
+    end.
 
+    %From one node
 
 
 

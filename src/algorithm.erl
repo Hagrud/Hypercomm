@@ -94,11 +94,15 @@ exec(Message, Data) ->
         
         {getObj, ObjId, Client}         -> getObj(Data, ObjId, Client),
                                            Data;
+                                           
+        {rmTmp, IdBC}                   -> sD(o, Data, maps:remove(IdBC, gD(o, Data)));
         
                 %Extern
         {saveObject, Object, Client}    -> sD(b, Data, saveObject(Data, Object, Client));
         
         {getObject, ObjId, Client}      -> sD(b, Data, getObject(Data, ObjId, Client));
+        
+        {objRm, ObjId}                  -> broadExec(Data, {objRm, ObjId}, null);
                                                              
             %Create link
         {askLink, Node, Id} -> sD(m, Data, linkTo(Data, Node, Id));
@@ -106,8 +110,7 @@ exec(Message, Data) ->
             %broadCast
         {broadcast, SubMessage, IdBC, IDSender} ->  sD(b, Data, broadExec(Data, SubMessage, IdBC, IDSender));
         
-        {broadcast ,Message, IdSender}          ->  broadExec(Data, Message, IdParent),
-                                                    Data;
+        {broadcast ,SubMessage, IdSender}          ->  broadExec(Data, SubMessage, IdSender);
                     
         {repBroad, SenderId, IdBC, Result} -> sD(b, Data, repBroad(Data, SenderId, IdBC, Result));
         
@@ -127,11 +130,14 @@ exec(Message, Data) ->
        %    BroadCast commands.
        % ==
        
-broadExec(Data, Message, BCId, IdParent)  -> 
+broadExec(Data, Message, IdParent)  -> 
     case Message of
-        {objAdded, ObjId, NodeId} -> broad:directObjAdded(Data, ObjId, NodeId);
+        {objAdded, ObjId, NodeId}   -> broad:directObjAdded(Data, IdParent, ObjId, NodeId);
+        
+        {objRm, ObjId}              -> broad:directObjRm(Data, IdParent, ObjId);
     
-        _               -> say("Warning receive unknow broadcast (without Id).")
+        _               -> say("Warning receive unknow broadcast (without Id)."),
+                           Data
     end.
     
     
