@@ -2,9 +2,9 @@
 
 -export([broadAdd/4, broadAddRep/5]).
 -export([broadNew/4, broadNewRep/5]).
--export([broadAddObj/3, broadAddObj/4, broadAddObjRep/4]).
+-export([broadAddObj/4, broadAddObjRep/5]).
 -export([broadGetObj/4, broadGetObjRep/5]).
--export([directObjAdded/4, directObjRm/3]).
+-export([directObjAdded/4, directObjRm/3, directNodeRm/3]).
 
 -import(comm, [broadCast/7, repBroad/8, mess/2]).
 -import(tool, [gD/2]).
@@ -65,41 +65,43 @@ newNode(SelfId, Id, PID) ->
     %Only the first one
 broadAddObj(Data, IdBC, null, {Obj}) -> 
     comm:send(addObj, self(), {IdBC, Obj}),
-    broadAddObj(Data, IdBC, null).
+    broadAddObj(Data, IdBC, null, IdBC);
     
     %For all.                                         
-broadAddObj(Data, IdBC, IdParent) -> comm:broadCast(Data, IdParent, IdBC, {addObj}, fun addObj/5).
+broadAddObj(Data, IdBC, IdParent, IdObj) -> comm:broadCast(Data, IdParent, IdBC, {addObj, IdObj}, fun addObj/5).
 
-broadAddObjRep(Data, IdBC, IdSender, Res) -> comm:repBroad(Data, IdSender, IdBC, {addObj}, Res, fun addObj/5).
+broadAddObjRep(Data, IdBC, IdSender, IdObj, Res) -> comm:repBroad(Data, IdSender, IdBC, {addObj, IdObj}, Res, fun addObj/5).
 
     %Initiator
-addObj(Data, IdBC, null, {addObj}, Result) -> 
-    [{{PID1, ID1}, _}, {{PID2, ID2}, _}] = addObj(Data, IdBC, 0, {addObj}, Result),
-    Object = maps:get(IdBC, gD(o, Data)),
+addObj(Data, IdBC, null, {addObj, IdObj}, Result) -> 
+    [{{PID1, ID1}, _}, {{PID2, ID2}, _}] = addObj(Data, IdBC, 0, {addObj, IdObj}, Result),
+    Object = maps:get(IdObj, gD(o, Data)),
     
         %Remove the tmp save if needed.
-    case {PID1, PID2, self()} of
-        {SELF, _, SELF} -> ok;
-        {_, SELF, SELF} -> ok;      
-        {_, _, _}       -> comm:send(rmTmp, self(), {IdBC})
+    case {PID1, PID2, self(), maps:is_key(IdObj, gD(o, Data)), IdObj} of
+        {SELF, _, SELF, _, _} -> ok;
+        {_, SELF, SELF, _, _} -> ok;
+        {_, _, _, true, IdBC} -> comm:send(rmTmp, self(), {IdBC});   
+        {_, _, _, _, _}   -> ok
     end,
         %Save the object
-    comm:send(addObj, PID1, {IdBC, Object}),
-    comm:send(addObj, PID2, {IdBC, Object}),
+    comm:send(addObj, PID1, {IdObj, Object}),
+    comm:send(addObj, PID2, {IdObj, Object}),
         %Broadcast the new information.
-    comm:send(directAdd, self(), {null, IdBC, ID1}),
-    comm:send(directAdd, self(), {null, IdBC, ID2}),
+    comm:send(directAdd, self(), {null, IdObj, ID1}),
+    comm:send(directAdd, self(), {null, IdObj, ID2}),
         %End the broadcast.
     endBroad(gD(i, Data), IdBC);
                                                 
                                               
     %Leaf
-addObj(Data, _, _, {addObj}, null) -> [{{self(),gD(i, Data)} , maps:size(gD(o, Data))}, null];
+addObj(Data, _, _, {addObj, _}, null) -> [{{self(),gD(i, Data)} , maps:size(gD(o, Data))}, null];
     
     %Node
-addObj(Data, _, _, {addObj}, Result) ->  
+addObj(Data, _, _, {addObj, _}, Result) ->  
     NResult = maps:put(-1, [{{self(),gD(i, Data)}, maps:size(gD(o, Data))}, null], Result),
     tool:applyOn(fun getTwoNode/3, maps:keys(NResult), {NResult}).
+
 
     % Utility.
 getTwoNode(Elem, {Map}, Ret) -> getTwoNode(maps:get(Elem, Map), Ret).
@@ -149,7 +151,6 @@ getContainer(Data, Result, ObjId) ->
         
         false -> tool:toList(Result)
     end.
-           
     
 %%%% Broadcast direct :
                  
@@ -164,7 +165,7 @@ objAdded(Data, {objAdded, ObjId, NodeId}) ->
                  {true, NData}
     end.
 
-    %From all the topology
+    %From all the topology (it also work to remove a node).
 directObjRm(Data, IdParent, ObjId) -> comm:broadCast(Data, IdParent, {objRm, ObjId}, fun objRm/2).
 
 objRm(Data, {objRm, ObjId}) ->
@@ -172,14 +173,38 @@ objRm(Data, {objRm, ObjId}) ->
     case maps:is_key(ObjId, gD(a, NData)) of
         true -> {true, tool:sD(a, NData, tool:aRm(gD(a, NData), ObjId))};
         
-        false -> {false, Data}
+        false -> {false, NData}
     end.
 
-    %From one node
 
+    %Remove one node (not a real broadcast)
+directNodeRm(Data, IdParent, Id) -> comm:broadCast(Data, IdParent, {nodeRm, Id}, fun nodeRm/2).
 
+nodeRm(Data, {nodeRm, Id}) ->
+    case tool:hamming(Id, gD(i, Data)) of   %Disconnect if connected.
+        1 -> NData = tool:sD(m, Data, algorithm:unLinkTo(Data, Id));
+        
+        _ -> NData = Data
+    end,
+    tool:applyOn(fun shouldReAttr/3, maps:keys(gD(o, NData)), {Data, Id}),
+    case maps:is_key(Id, gD(a, NData)) of
+        true  -> {true, tool:sD(a, NData, tool:aRm(gD(a, NData), Id))};
+        
+        false -> {false, NData}
+    end.
 
-
+shouldReAttr(Elem, {Data, Id}, _) ->
+    case maps:get(Elem, gD(a, Data), null) of
+        null -> ok;
+        
+        List -> 
+            case {length(List), lists:member(Id, List)} of
+                {2, true} -> comm:send(reAttrib, self(), {Elem});
+                
+                _         -> ok
+            end
+    end.
+    
 
                                   
 

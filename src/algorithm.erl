@@ -8,6 +8,7 @@
 -import(tool, [gD/2, sD/3]).
 
 -export([loop/1, s_/1, create_first/0]).
+-export([unLinkTo/2]).
 
 
 s_(h)   ->  spawn(algorithm, create_first, []);
@@ -54,24 +55,6 @@ loop(Data, Cible, Time, Start) -> say("start loop."),
              
 reloop(Data, Cible, Start) -> loop(Data, Cible, tool:max(0, 5000 + (Start - tool:time_m())), Start).
 
-
-    % ===
-    %   Lost of a node. TODO
-    % ===
-        % ===
-        %   Common
-        % ===
-%disconnect(Data, Id) -> Data.
-                        %remove node
-                        %broadcast for each file to get it back (it also prevent others that node had been disconnected).
-        % ===
-        %   Asked
-        % ===
-        
-        % ===
-        %   Crash
-        % ===
-
     % ==         
     %   Basic Commands     
     % ==   
@@ -79,6 +62,9 @@ exec(Message, Data) ->
     case Message of
             %Add a new neighbor.          
         {add, PID}  ->  sD(b, Data, addNode(Data, PID));
+        
+            %Deconnection
+        {bye, Id}   ->  disconnect(Data, Id);
                         
             %Add a new node to the topology.
         {put, PID}  ->  sD(b, Data, putNode(Data, PID));
@@ -92,6 +78,8 @@ exec(Message, Data) ->
                 %Intern
         {addObj, ObjId, Obj}            -> sD(o, Data, addObject(Data, ObjId, Obj));
         
+        {reAttrib, ObjId}               -> sD(b, Data, reAttrib(Data, ObjId));
+        
         {getObj, ObjId, Client}         -> getObj(Data, ObjId, Client),
                                            Data;
                                            
@@ -104,10 +92,10 @@ exec(Message, Data) ->
         
         {objRm, ObjId}                  -> broadExec(Data, {objRm, ObjId}, null);
                                                              
-            %Create link
+                %Create link
         {askLink, Node, Id} -> sD(m, Data, linkTo(Data, Node, Id));
                         
-            %broadCast
+                %broadCast
         {broadcast, SubMessage, IdBC, IDSender} ->  sD(b, Data, broadExec(Data, SubMessage, IdBC, IDSender));
         
         {broadcast ,SubMessage, IdSender}          ->  broadExec(Data, SubMessage, IdSender);
@@ -116,11 +104,9 @@ exec(Message, Data) ->
         
         {endBroad, IdBC, IDSender} ->   sD(b, Data, comm:endBroad(gD(i, Data), IDSender, IdBC, gD(m, Data), gD(b, Data)));
         
-            %disconnect
-        %{disconnect, Id}    -> sD(m, Data, );
-
             %ShutDown
-        {stop}  ->  null;
+        {stop}  ->  stop(Data),
+                    null;
                         
         _       ->  say(" Unknow message."),
                     Data
@@ -135,6 +121,8 @@ broadExec(Data, Message, IdParent)  ->
         {objAdded, ObjId, NodeId}   -> broad:directObjAdded(Data, IdParent, ObjId, NodeId);
         
         {objRm, ObjId}              -> broad:directObjRm(Data, IdParent, ObjId);
+        
+        {nodeRm, Id}                -> broad:directNodeRm(Data, IdParent, Id);
     
         _               -> say("Warning receive unknow broadcast (without Id)."),
                            Data
@@ -147,7 +135,7 @@ broadExec(Data, Message, BCId, IdParent)  ->
                                                 
         {new, PID, Id}  -> broad:broadNew(Data, BCId, IdParent, {PID, Id});
                                                 
-        {addObj}        -> broad:broadAddObj(Data, BCId, IdParent);
+        {addObj, IdObj}        -> broad:broadAddObj(Data, BCId, IdParent, IdObj);
         
         {getObj, ObjId, Client}
                         -> broad:broadGetObj(Data, BCId, IdParent, {ObjId, Client});
@@ -162,7 +150,7 @@ repBroad(Data, IdSender, BCId, {Message, Res}) ->
                                                     
         {new, PID, Id}  ->  broad:broadNewRep(Data, BCId, IdSender, null, {PID, Id});
         
-        {addObj}        ->  broad:broadAddObjRep(Data, BCId, IdSender, Res);
+        {addObj, IdObj}        ->  broad:broadAddObjRep(Data, BCId, IdSender, IdObj, Res);
         
         {getObj, ObjId, Client}
                         ->  broad:broadGetObjRep(Data, BCId, IdSender, Res, {ObjId, Client});
@@ -170,6 +158,16 @@ repBroad(Data, IdSender, BCId, {Message, Res}) ->
         _               ->  say("Warning receive unknow rep broadcast."),
                             gD(b, Data)
     end.
+    
+    % ===
+    %   Lost of a node. TODO
+    % ===
+        % ===
+        %   Common
+        % ===
+disconnect(Data, Id) -> 
+    comm:send(directRmNode, self(), {null, Id}),
+    sD(m, Data, unLinkTo(Data, Id)).
                                                   
 % =====
 %   Build the struct.
@@ -183,9 +181,11 @@ add( Data, PID, Id) ->  send(giveId, PID, {Id}),
                         broad:broadNew(Data, tool:getHash(Data), null, {PID, Id}).
                         
 % =====
-%   Create Link.
+%   Create/Destroy Link.
 % =====
 linkTo(Data, Node, Id)  -> maps:put(tool:getFDB(gD(i, Data), Id), Node, gD(m, Data)).
+
+unLinkTo(Data, Id)      -> maps:remove(tool:getFDB(gD(i, Data), Id), gD(m, Data)).
                                                                                                             
 % ====
 %   Data Management
@@ -196,6 +196,8 @@ saveObject(Data, Object, Client) -> IdObject = tool:getHash(Data),
                                     comm:send(toClient, Client, IdObject),
                                     broad:broadAddObj(Data, IdObject, null, {Object}).
                                     
+reAttrib(Data, ObjId)            -> broad:broadAddObj(Data, tool:getHash(Data), null, ObjId).
+                                    
 getObject(Data, ObjId, Client)   -> broad:broadGetObj(Data, tool:getHash(Data), null, {ObjId, Client}).
 
 getObj(Data, ObjId, Client) -> 
@@ -205,6 +207,10 @@ getObj(Data, ObjId, Client) ->
         false   ->  comm:send(toClient, Client, {ObjId, notFound})
 
     end.
+    
+stop(Data) -> tool:applyOn(fun stop/3, maps:keys(gD(m, Data)), {gD(m, Data), gD(i, Data)}).
+
+stop(Elem, {Map, Id}, _) -> comm:send(bye, maps:get(Elem, Map), {Id}).
 
 % ====
 %   Debug function

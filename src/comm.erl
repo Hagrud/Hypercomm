@@ -32,9 +32,15 @@ send(getObj, Receiver, {ObjId, Client})        ->   mess(Receiver, {u, {getObj, 
 
 send(directAdd, Receiver, {Parent, OId, Id})   ->   mess(Receiver, {u, {broadcast, {objAdded, OId,Id}, Parent}, self()});
 
+send(directRmNode, Receiver, {Parent, Id})     ->   mess(Receiver, {u, {broadcast, {nodeRm, Id}, Parent}, self()});
+
+send(reAttrib, Receiver, {ObjId})              ->   mess(Receiver, {u, {reAttrib, ObjId}, self()});
+
 send(rmTmp, Receiver, {IdBC})                  ->   mess(Receiver, {u, {rmTmp, IdBC}, self()});
 
 send(toClient, Client, Value)                  ->   mess(Client, Value);
+
+send(bye, Receiver, {Id})                      ->   mess(Receiver, {u, {bye, Id}, self()});
 
 send(giveId, Receiver, {Id})                   ->   mess(Receiver, {reg, Id}).
 
@@ -58,6 +64,17 @@ prevent(neighChange, Map, {Id, Node})                         ->  tool:applyOn(f
     %           BroadCast : ID -> {Parent, MapValueReceived}.
     %   ====
 broadCast(Data, IdParent, IdBC, Message, Decide) -> 
+    case IdParent of %check if parent is well linked
+        null -> broadCastOk(Data, IdParent, IdBC, Message, Decide);
+        
+        _ -> case maps:is_key(tool:getFDB(IdParent, gD(i, Data)), gD(m, Data)) of
+                true -> broadCastOk(Data, IdParent, IdBC, Message, Decide);
+                
+                false -> gD(b, Data)
+             end
+    end.
+    
+broadCastOk(Data, IdParent, IdBC, Message, Decide) -> 
     Map = gD(m, Data),
     Id = gD(i, Data),
     BCMap = gD(b, Data),
