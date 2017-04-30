@@ -4,7 +4,7 @@
 
 
 -export([hamming/2, getFDB/2]).
--export([getPID/1, getVoisinId/2]).
+-export([getVoisinId/2]).
 -export([getLC/2, getNextFreeKey/1]).
 
 
@@ -13,18 +13,30 @@
 -export([applyOn/3]).
 
 
+-export([gD/2, sD/3]).
+% ====
+%   Operation on Data = {PID, Map, Objects, ID, BCMap}
+% ====
+    %Getter
+gD(p, {PID, _, _, _, _}) -> PID;
+gD(m, {_, Map, _, _, _}) -> Map;
+gD(o, {_, _, Obj, _, _}) -> Obj;
+gD(i, {_, _, _,  ID, _}) -> ID;
+gD(b, {_, _, _, _, BCM}) -> BCM.
 
+    %Setter
+sD(p, {_, Map, Obj,  ID, BCM}, New)   -> {New, Map, Obj,  ID, BCM};
+sD(m, {PID, _, Obj,  ID, BCM}, New)   -> {PID, New, Obj,  ID, BCM};
+sD(o, {PID, Map, _,  ID, BCM}, New)   -> {PID, Map, New,  ID, BCM};
+sD(i, {PID, Map, Obj, _, BCM}, New)   -> {PID, Map, Obj, New, BCM};
+sD(b, {PID, Map, Obj, ID, _}, New)    -> {PID, Map, Obj,  ID, New}.
+    
+    
 % ====
 %   Get hash from state of a node (we hope it is unique).
 % ====
-getHash({Node, Map, Opp, Id, BCMap}) -> crypto:hash(md5, [Id, maps:keys(Map), maps:keys(BCMap)]).
-
-% ====
-%   Operation on Node
-% ====
-getKL({ _, KnowLinks}) -> KnowLinks.
-
-getPID({PID, _}) -> PID.
+getHash({Node, Map, Opp, Id, BCMap}) -> Time = erlang:system_time(nano_seconds),
+                                        [Id, crypto:hash(md5, [maps:keys(Map), maps:keys(BCMap)]), Time].
 
 % ====
 %   Get Next free key.
@@ -54,7 +66,7 @@ getMinTuple(Map) -> applyOn(fun getMinTuple/3, maps:keys(Map), Map).
 
 getMinTuple(Elem, Map, null)        -> maps:get(Elem, Map);
 getMinTuple(Elem, Map, {Id1, Val1}) -> case maps:get(Elem, Map) of
-                                            {Id2, Val2} -> getMinTuple(Val1, Id1, Val2, Id2);
+                                            {Id2, Val2} -> getMinTuple(Val2, Id2, Val1, Id1);
                                             
                                             _ -> {Id1, Val1}
                                        end.

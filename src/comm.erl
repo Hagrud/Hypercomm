@@ -1,9 +1,10 @@
 -module(comm).
 
 %-import(maps, [get/2, keys/1]).
--import(tool, [getPID/1, hamming/2, applyOn/3, getVoisinId/2, getFDB/2]).
+-import(tool, [hamming/2, applyOn/3, getVoisinId/2, getFDB/2]).
+-import(tool, [gD/2]).
 
--export([send/3, prevent/3, broadCast/7, repBroad/8, endBroad/5]).
+-export([send/3, prevent/3, broadCast/5, repBroad/6, endBroad/5]).
 
 %   =
 %   Communication module.
@@ -23,7 +24,9 @@ send(neighChange, Receiver, {Id, Node}) ->  mess(Receiver, {u, {newWeight, Node,
 
 send(endBroad, Receiver, {Id, BCId})    ->  mess(Receiver, {u, {endBroad, BCId, Id}, self()});
 
-send(repBroad, Receiver, {Id, BCId, Message})  -> mess(Receiver, {u, {repBroad, Id, BCId, Message}, self()}).
+send(repBroad, Receiver, {Id, BCId, Message})  -> mess(Receiver, {u, {repBroad, Id, BCId, Message}, self()});
+
+send(giveId, Receiver, {Id}) -> mess(Receiver, {reg, Id}).
 
 
     %   ====
@@ -44,17 +47,20 @@ prevent(neighChange, Map, {Id, Node})                         ->  tool:applyOn(f
     %       BroadCasts : a utiliser rarement si possible.
     %           BroadCast : ID -> {Parent, MapValueReceived}.
     %   ====
-broadCast(Id, IdParent, IdBC, Map, BCMap, Message, Decide) -> 
+broadCast(Data, IdParent, IdBC, Message, Decide) -> 
+    Map = gD(m, Data),
+    Id = gD(i, Data),
+    BCMap = gD(b, Data),
     case maps:is_key(IdBC, BCMap) of
-        true ->  repBroad(Id, IdParent, IdBC, Map, BCMap, Message, null, Decide);
+        true ->  repBroad(Data, IdParent, IdBC, Message, null, Decide);
                                                                    
         false -> case {maps:size(Map), IdParent} of
                                                                                 
-            {0, null}  -> Decide({Id, IdBC, null, Map}, Message, maps:new()), maps:put(IdBC, {IdParent, maps:new()}, BCMap);
+            {0, null}  -> Decide(Data, IdBC, null, Message, maps:new()), maps:put(IdBC, {IdParent, maps:new()}, BCMap);
                                                                                 
             {_, null}  -> tool:applyOn(fun pBroadCast/3, maps:keys(Map),{Map, Message, IdBC, Id}), maps:put(IdBC, {IdParent, maps:new()}, BCMap);
                                                                                 
-            {1, _}  -> send(repBroad, maps:get(tool:getFDB(Id, IdParent),Map),{Id, IdBC, {Message, Decide({Id, IdBC, IdParent, Map}, Message, null)}}),
+            {1, _}  -> send(repBroad, maps:get(tool:getFDB(Id, IdParent),Map),{Id, IdBC, {Message, Decide(Data, IdBC, IdParent, Message, null)}}),
                                                                                            maps:put(IdBC, {Id, IdParent, maps:new()}, BCMap);
                                                                                 
                                                                                     % TODO a voir ??!
@@ -63,16 +69,19 @@ broadCast(Id, IdParent, IdBC, Map, BCMap, Message, Decide) ->
         end
     end.
                                                          
-repBroad(Id, IdSender, IdBC, Map, BCMap, Message, Result, Decide) -> 
+repBroad(Data, IdSender, IdBC, Message, Result, Decide) -> 
+    Map = gD(m, Data),
+    Id = gD(i, Data),
+    BCMap = gD(b, Data),
     NBCMap = addInfoBCMap(IdBC, BCMap, maps:get(IdBC, BCMap), IdSender, Result),
     case { getBCParent(maps:get(IdBC, NBCMap)) , maps:size(Map) - maps:size(getBCMap(maps:get(IdBC, NBCMap)))} of
         
-        {null, 0} -> Decide({Id, IdBC, null, Map}, Message, getBCMap(maps:get(IdBC, NBCMap)));
+        {null, 0} -> Decide(Data, IdBC, null, Message, getBCMap(maps:get(IdBC, NBCMap)));
                                                                 
         {null, _} -> null;
                                                             
         {IdParent, 1}  -> send(repBroad, maps:get(tool:getFDB(Id, IdParent), Map),
-                                         {Id, IdBC, {Message, Decide({Id, IdBC, IdParent, Map}, Message, getBCMap(maps:get(IdBC, NBCMap)))}})
+                                         {Id, IdBC, {Message, Decide(Data, IdBC, IdParent, Message, getBCMap(maps:get(IdBC, NBCMap)))}})
     end,
     NBCMap.
 
@@ -113,7 +122,7 @@ pEndBroadCast(Key, {Map, IdBC, IdSender}, _) -> mess(maps:get(Key, Map), {u, {en
 %   Debug
 %   =
 
-mess(Dest, Message) -> say(s, tool:getPID(Dest), Message),
-                       tool:getPID(Dest)!Message.
+mess(Dest, Message) -> say(s, Dest, Message),
+                       Dest!Message.
 
 say(s, To, Message) -> io:fwrite("[~p][ ->](~p) send : ~p ~n", [self(), To, Message]).
