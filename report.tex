@@ -33,16 +33,13 @@
 		
 		Intuitively this topology may allow to have a low numbers of messages and a "safe" network without getting an highly connected graph. On the other hand there is no order between the nodes and solutions to communicate efficiently seems not trivial.
 		
-		\subsection{Node definition:}
+		\subsection{Node sketch:}
 			In the topology a node will be an Erlang thread, once assigned in the network each node will know its unique identifier related to this network.
 			
 			The identifier ID of a node is an integer, each node will be connected to another node if and only if their ID differ from 1 digit in their binary representation.
 			
-		\subsection{Build the network:}
-			The base structure is a doubly linked topology, we used those links only to detect the loss of a node and/or construct the network.
-			
-			Then for "real" communication, each nodes will get a link to nodes with one different bit in their Id. (See  Figures 1 and 2).
-		
+			Each node will then had variable to memorize his neighborhood and data saved in the network.
+					
 			\begin{figure}
 							\begin{tikzpicture}[-,>=stealth',shorten >=1pt,auto,node distance=2cm,
 							semithick]
@@ -82,79 +79,143 @@
 							
 							\end{tikzpicture}
 				\caption{Links in an hypercube topology. (communication)}
-			\end{figure}
+			\end{figure}		
+							
+		\newpage		
+		\subsection{Communication algorithm:}
+			I decide to mainly use waves algorithms, I call them broadcast in the source code.
 			
-			\begin{figure}
-				\begin{tikzpicture}[-,>=stealth',shorten >=1pt,auto,node distance=2cm,semithick]
-					\tikzstyle{every state}=[fill=white,draw=blue,text=black]
-							
-					\node[state] (0)                 {$0$};
-					\node[state] (1) [right of=0] 	{$1$};
-					\node[state] (2) [right of=1] 	{$2$};
-					\node[state] (3) [right of=2] 	{$3$};
-					\node[state] (4) [right of=3] 	{$4$};
-					\node[state] (5) [right of=4] 	{$5$};
-					\node[state] (6) [right of=5] 	{$6$};
-					\node[state] (7) [right of=6] 	{$7$};
-							
-					\path
-					(0) edge[->] 			node {} (1)
-					(0) edge[bend left] 	node {} (1)
-					(0)	edge[bend left]		node {} (2)
-					(0)	edge[bend left]		node {}	(4)
-							
-					(1) edge[->] 			node {} (2)
-					(1) edge[bend right]	node {} (3)
-					(1) edge[bend right]	node {} (5)
-					
-					(2) edge[->] 			node {} (3)	
-					(2) edge[bend left]		node {} (3)
-					(2) edge[bend left]		node {} (6)
-							
-					(3) edge[->] 	 		node {} (4)
-					(3) edge[bend right]	node {} (7)
-					
-					(4) edge[->] 			node {} (5)	
-					(4) edge[bend left]		node {} (5)
-					(4) edge[bend left]		node {} (6)
-							
-					(5) edge[->]  	 		node {} (6)
-					(5) edge[bend right]	node {} (7)
-					
-					(6) edge[->] 			node {} (7)	
-					(6) edge[bend left]		node {} (7);
-							
-				\end{tikzpicture}
-				\caption{Links in our topology. (Complete topology)}
-			\end{figure}
-			
-			We define two way of building this topology:
-			
-			\begin{itemize}
-				\item Using only communication structure, with a wave algorithm we search the node which have the minimum number of neighbors and he add the new node.
+			\paragraph{Node to node:}
+				This protocol is not implemented in the Erlang project.
 				
-				But:
-				\begin{itemize}
-					\item if we loss node in the "middle" of the topology we may not quickly replace them.
-					\item it's not easy to deal with the loss of a node during the wave algorithm.
-				\end{itemize}
+				The idea is to contact one node by sending a message through the topology. When a node have the message, he know the destination and the message kept in memory its visited nodes.
 				
+				A node search the first different bit between its Id and the receiver's Id, he will send the message to its neighbor which differ from this bit if the message had not yet pass through this node.
 				
-				\item With the "debug" links we send the new node to the next node in the topology until we found one without next node.
+				An example of this protocol is given (see Fig 2).
 				
-				But:
-				\begin{itemize}
-					\item This algorithm do not take advantage of the topology.
-				\end{itemize}
-			\end{itemize}
+							\begin{figure}
+								\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=2cm,
+								semithick]
+								\tikzstyle{every state}=[fill=white,draw=blue,text=black]
+								
+								\node[state] (0)                {$abc$};
+								\node[state] (1) [right of=0] 	{$ab\overline{c}$};
+								\node[state] (2) [right of=1] 	{$a\overline{b}c$};
+								\node[fill=white,draw=red,text=black] (3) [right of=2] 	{$a\overline{bc}$};
+								\node[state] (4) [right of=3] 	{$\overline{a}bc$};
+								\node[state] (5) [right of=4] 	{$\overline{a}b\overline{c}$};
+								\node[state] (6) [right of=5] 	{$\overline{ab}c$};
+								\node[state] (7) [right of=6] 	{$\overline{abc}$};
+								
+								\path 
+								(0) edge[bend left]  	node {1} (1)
 
+								(1) edge[bend right]	node {2} (3)
+								(3) edge[bend right]	node {3} (1)
+								(1) edge[bend right]	node {4} (5)
+								
+								(5) edge[bend right]	node {6} (7);
+								
+								\end{tikzpicture}
+								\caption{Example of node to node.}
+							\end{figure}	
 				
-				
-		\subsection{Basic communication algorithm:}
-			
-			\paragraph{Send to ID:}
-			
 			\paragraph{Broadcast:}
+				I mainly use broadcast for this project, I implemented two type of broadcast:
+				
+				\begin{itemize}
+					\item Direct broadcast, nodes know if they had to send the message to their neighbors via their data.
+					\item Waves algorithms, node need to save a specific identifier to know if they already receive a message related to this broadcast. With waves protocols nodes also send a message back to their father. At the end their is a Direct broadcast used to remove the identifier from the memory.
+				\end{itemize}
+				
+	\section{Implemented parts:}
+		\subsection{Basic topology (1):}
+			We can spawn to kind of agent,
+			\begin{itemize}
+				\item Waiting agents they have no information and they wait to be contacted by a node from an existing topology.
+				\item The node 0 of a topology, he can receive all the commands (But some as storing data will not work with less than 2 nodes in the topology).
+			\end{itemize} 
+				\bigbreak
+			Once you've got a node with an Identifier it can receive all kind of messages. All the node in the hypercube had the same role and their is no "father" or central node.
+			
+		\subsection{Adding new agents (1):}
+			Non waiting agent can receive a message with the PID of a waiting node, they will add him to the topology.
+			
+			To do so, they will search for the node with the lower number of connexion (with a wave protocol), then this node will attribute an identifier to the waiting node and with an other wave algorithm they will prevent all the topology.
+			
+			If a node is at an hamming distance 1 of the new node it will ask to be linked.
+		
+		\subsection{Kill an agent (1):}
+			\paragraph{With command: (implemented)}
+				A node can prevent its neighborhood when it will shutdown. Others will disconnect from it and replace it following the rules of Adding new agents when a new node will join the topology.
+				
+				\medbreak
+				Once the topology is an hypercube of dimension $\log(n)$ the network can handle $\log(n) - 1$ shutdown before being disconnected.
+				
+				\medbreak
+				The node which leave the topology do nothing more that saying "I leave".
+			
+			\paragraph{On crash: (not implemented)}
+				As the node that leave the topology had nothing to do, in this case we just had to detect when a node crash and execute the previous algorithm.
+				
+				\medbreak
+				The idea is to ping the neighbors one by one from time to time and if they do not respond after few seconds we assume their dead.
+				
+		\subsection{Broadcast (2):}
+			Almost all the protocols works with broadcasts.
+				\paragraph{Direct}
+				
+				\paragraph{Wave algorithm}
+		
+		\subsection{Receive data (3):}
+			Nodes from the topology can receive data, from another Erlang thread. The will send an "unique" Identifier back to retrieve the data later.
+			
+		\subsection{Store data (3):}
+			Each nodes can store data, the had a maps that link "unique" identifier to data. They can send the data if we give them the identifier.
+			
+			\medbreak
+			When an external node ask for a data, the node that handle its request will start a broadcast to ask which one had the data, then one of them will send the data to the external node.
+		
+		
+		\subsection{Spread data through the topology (3):}
+			I decide to double the data through the topology, as we said on  "Kill an agent" section when a node disconnect it did not help others before leaving.
+			\medbreak
+			So each data is stored at least on two nodes when the systems is stable. When a node have to add data, he search for the two nodes that had the less data in memory (with a broadcast). After that it will send them data.
+			\medbreak
+			Each nodes know where data are stored and which data contain each node of the network, all those informations are stored on a map and updated via broadcast.
+			
+		\subsection{Save data when someone left (3):}
+			When a node left its neighborhood will quickly know it, they will prevent all the other node that the node had left (with a broadcast). If a node had common data with it he will check if it is the last one with those data, if it is the case he will found 2 nodes in the topology and attribute them the data.
+			
+			\medbreak
+			If this node is shutdown before re-attributing they will be lost.
+		
+		
+		\section{Code:}
+		
+		\begin{itemize}
+			\item There is no deployment script provided.
+			\item Code work on Erlang/OTP 18 [erts-7.3].
+		\end{itemize}
+		The code did not work with Erlang 5 provided on the ENS network, because I use map that are not yet implemented in Erlang 5.
+		
+		\subsection{Useful functions:}
+		Building the structure:
+		\begin{itemize}
+			\item algorithm:s\_(h) 	: spawn a node 0 in a new topology.
+			\item algorithm:s\_(w) 	: spawn a waiting node.
+			\item PID!\{put, PID2\} : add the node with PID2 in the topology of PID.
+			\item PID!\{stop\}		: shutdown the node.
+		\end{itemize}
+		
+		For data:
+		\begin{itemize}
+			\item PID!\{saveObject, Object, PID1\} : save Object in the network, the identifier will be sent back to PID1.
+			\item PID!\{getObject, Id, PID1\} : send the object with this Id to PID1 if it exist.
+		\end{itemize}
+
+			
 			
 \end{document}
 }

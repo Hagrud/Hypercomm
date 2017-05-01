@@ -160,11 +160,8 @@ repBroad(Data, IdSender, BCId, {Message, Res}) ->
     end.
     
     % ===
-    %   Lost of a node. TODO
+    %   Lost of a node.
     % ===
-        % ===
-        %   Common
-        % ===
 disconnect(Data, Id) -> 
     comm:send(directRmNode, self(), {null, Id}),
     sD(m, Data, unLinkTo(Data, Id)).
