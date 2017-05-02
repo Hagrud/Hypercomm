@@ -62,10 +62,6 @@ newNode(SelfId, Id, PID) ->
 % ===
 %   Save Object on two nodes.
 % ===
-    %Only the first one
-broadAddObj(Data, IdBC, null, {Obj}) -> 
-    comm:send(addObj, self(), {IdBC, Obj}),
-    broadAddObj(Data, IdBC, null, IdBC);
     
     %For all.                                         
 broadAddObj(Data, IdBC, IdParent, IdObj) -> comm:broadCast(Data, IdParent, IdBC, {addObj, IdObj}, fun addObj/5).

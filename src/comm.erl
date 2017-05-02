@@ -42,7 +42,7 @@ send(toClient, Client, Value)                  ->   mess(Client, Value);
 
 send(bye, Receiver, {Id})                      ->   mess(Receiver, {u, {bye, Id}, self()});
 
-send(giveId, Receiver, {Id})                   ->   mess(Receiver, {reg, Id}).
+send(giveId, Receiver, {Id, Addr})             ->   mess(Receiver, {reg, Id, Addr}).
 
 
     %   ====

@@ -22,8 +22,8 @@ s_(w)   ->  spawn(algorithm, loop, [waiting]).
 create_first() -> loop({ maps:new(), maps:new(), maps:new(), 0, maps:new()}, null, 5000, tool:time_m()).
 
 loop(waiting) -> receive
-                    {reg, Id}   ->  say(r, {reg, Id}),
-                                    loop({maps:new(), maps:new(), maps:new(), Id, maps:new()}, null, 5000, tool:time_m());
+                    {reg, Id, Addr}   ->  say(r, {reg, Id}),
+                                          loop({maps:new(), maps:new(), Addr, Id, maps:new()}, null, 5000, tool:time_m());
                                     
                     _           ->  io:fwrite("close ~n")
                  end.
@@ -86,7 +86,7 @@ exec(Message, Data) ->
         {rmTmp, IdBC}                   -> sD(o, Data, maps:remove(IdBC, gD(o, Data)));
         
                 %Extern
-        {saveObject, Object, Client}    -> sD(b, Data, saveObject(Data, Object, Client));
+        {saveObject, Object, Client}    -> saveObject(Data, Object, Client);
         
         {getObject, ObjId, Client}      -> sD(b, Data, getObject(Data, ObjId, Client));
         
@@ -150,7 +150,7 @@ repBroad(Data, IdSender, BCId, {Message, Res}) ->
                                                     
         {new, PID, Id}  ->  broad:broadNewRep(Data, BCId, IdSender, null, {PID, Id});
         
-        {addObj, IdObj}        ->  broad:broadAddObjRep(Data, BCId, IdSender, IdObj, Res);
+        {addObj, IdObj} ->  broad:broadAddObjRep(Data, BCId, IdSender, IdObj, Res);
         
         {getObj, ObjId, Client}
                         ->  broad:broadGetObjRep(Data, BCId, IdSender, Res, {ObjId, Client});
@@ -174,7 +174,7 @@ putNode(Data, PID) ->   broad:broadAdd(Data, tool:getHash(Data), null, PID).
 
 addNode(Data, PID)  ->  add(Data, PID, tool:getVoisinId(gD(i, Data) , tool:getNextFreeKey(gD(m, Data)))).
   
-add( Data, PID, Id) ->  send(giveId, PID, {Id}),
+add( Data, PID, Id) ->  send(giveId, PID, {Id, gD(a, Data)}),
                         broad:broadNew(Data, tool:getHash(Data), null, {PID, Id}).
                         
 % =====
@@ -190,8 +190,9 @@ unLinkTo(Data, Id)      -> maps:remove(tool:getFDB(gD(i, Data), Id), gD(m, Data)
 addObject(Data, ObjId, Obj)      -> maps:put(ObjId, Obj, gD(o, Data)).
 
 saveObject(Data, Object, Client) -> IdObject = tool:getHash(Data),
+                                    NData = sD(o, Data, addObject(Data, IdObject, Object)),
                                     comm:send(toClient, Client, IdObject),
-                                    broad:broadAddObj(Data, IdObject, null, {Object}).
+                                    sD(b, NData, broad:broadAddObj(Data, IdObject, null, IdObject)).
                                     
 reAttrib(Data, ObjId)            -> broad:broadAddObj(Data, tool:getHash(Data), null, ObjId).
                                     
